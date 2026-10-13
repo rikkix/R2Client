@@ -1,5 +1,7 @@
 'use client';
 import ObjectActions from '@/app/components/ObjectActions';
+import FileAreaLoading from '@/app/components/FileAreaLoading';
+import { useDelayedFlag } from '@/app/hooks/useDelayedFlag';
 
 import dynamic from 'next/dynamic';
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
@@ -229,6 +231,11 @@ export default function Home() {
     currentPath
   );
   const { isSyncing, isSynced, lastSyncTime, refresh: refreshSync } = useFilesSync(config);
+  const showCachedNotice = useDelayedFlag(
+    hasData && !searchQuery.trim() && !error && !isPartial && isCached && isFetching,
+    JSON.stringify([config?.provider, config?.accountId, config?.bucket, currentPath]),
+    250
+  );
 
   useEffect(() => {
     clearSelection();
@@ -1077,7 +1084,7 @@ export default function Home() {
   if (loading) {
     return (
       <div className="center-container">
-        <Spin fullscreen />
+        <Spin size="large" />
       </div>
     );
   }
@@ -1174,7 +1181,7 @@ export default function Home() {
               </div>
             )}
 
-            {hasData && !searchQuery.trim() && (error || isPartial || (isCached && isFetching)) && (
+            {hasData && !searchQuery.trim() && (error || isPartial || showCachedNotice) && (
               <Alert
                 type={error ? 'warning' : 'info'}
                 showIcon
@@ -1203,9 +1210,7 @@ export default function Home() {
                   action={<Button onClick={() => void refresh()}>Retry</Button>}
                 />
               ) : isLoading || isSearching ? (
-                <div className="file-list-loading">
-                  <Spin description={isSearching ? 'Searching bucket...' : undefined} fullscreen />
-                </div>
+                <FileAreaLoading searching={isSearching} />
               ) : filteredItems.length === 0 ? (
                 <EmptyState
                   search={searchQuery || undefined}
