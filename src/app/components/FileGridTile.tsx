@@ -244,6 +244,7 @@ const FileGridTile = memo(function FileGridTile({
 
   return (
     <FileContextMenu
+      storageConfig={storageConfig}
       item={item}
       onDownload={onDownload}
       onRename={onRename}

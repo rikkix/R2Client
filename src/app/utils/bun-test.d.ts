@@ -15,6 +15,7 @@ declare module 'bun:test' {
   };
 
   interface Matchers<T> {
+    toThrow(expected?: string | RegExp): void;
     toBe(expected: T): void;
     toEqual(expected: unknown): void;
     toContain(expected: unknown): void;

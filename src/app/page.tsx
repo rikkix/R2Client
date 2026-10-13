@@ -1,4 +1,5 @@
 'use client';
+import ObjectActions from '@/app/components/ObjectActions';
 
 import dynamic from 'next/dynamic';
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
@@ -1219,6 +1220,7 @@ export default function Home() {
                 />
               ) : viewMode === 'list' ? (
                 <FileListView
+                  storageConfig={config}
                   items={filteredItems}
                   selectedKeys={selectedKeys}
                   metadata={metadata}
@@ -1325,6 +1327,8 @@ export default function Home() {
                 }}
               />
             )}
+
+            <ObjectActions config={config} />
 
             {previewFile && (
               <FilePreviewModal

@@ -1,3 +1,5 @@
+import { useObjectActionStore } from '@/app/stores/objectActionStore';
+import { hasSigningCredentials, type StorageConfig } from '@/app/lib/r2cache';
 import { Dropdown } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -11,6 +13,7 @@ import { FileItem } from '@/app/hooks/useR2Files';
 
 interface FileContextMenuProps {
   children: React.ReactNode;
+  storageConfig?: StorageConfig | null;
   item: FileItem;
   onDownload?: (item: FileItem) => void;
   onRename: (item: FileItem) => void;
@@ -22,6 +25,7 @@ interface FileContextMenuProps {
 
 export default function FileContextMenu({
   children,
+  storageConfig,
   item,
   onDownload,
   onRename,
@@ -30,6 +34,26 @@ export default function FileContextMenu({
   onFolderRename,
   onFolderDelete,
 }: FileContextMenuProps) {
+  const open = useObjectActionStore((state) => state.open);
+  const actionItems =
+    storageConfig && hasSigningCredentials(storageConfig)
+      ? [
+          {
+            key: 'signed-url',
+            label: 'Generate signed URL',
+            icon: <CopyOutlined />,
+            onClick: () =>
+              open({ kind: 'signed-url', config: storageConfig, key: item.key, name: item.name }),
+          },
+          {
+            key: 'metadata',
+            label: 'Edit metadata',
+            icon: <EditOutlined />,
+            onClick: () =>
+              open({ kind: 'metadata', config: storageConfig, key: item.key, name: item.name }),
+          },
+        ]
+      : [];
   const handleCopyPath = () => {
     navigator.clipboard.writeText(item.key);
   };
@@ -76,6 +100,7 @@ export default function FileContextMenu({
           : []),
       ]
     : [
+        ...actionItems,
         ...(onDownload
           ? [
               {
@@ -110,7 +135,9 @@ export default function FileContextMenu({
 
   return (
     <Dropdown menu={{ items: menuItems }} trigger={['contextMenu']}>
-      {children}
+      {/* Native event target; custom rows do not forward Dropdown's handlers.
+          display: contents preserves the list's per-row CSS grid. */}
+      <div style={{ display: 'contents' }}>{children}</div>
     </Dropdown>
   );
 }

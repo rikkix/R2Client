@@ -66,6 +66,8 @@ tauri-plugin-connector = { version = "0.9", optional = true }
 # Localhost NFSv3 server backing the "mount bucket as local drive" feature
 nfsserve = "0.11"
 async-trait = "0.1"
+axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+uuid = { version = "1.26.1", features = ["v4"] }
 
 # uid/gid for the synthetic file attributes served over NFS
 [target.'cfg(unix)'.dependencies]

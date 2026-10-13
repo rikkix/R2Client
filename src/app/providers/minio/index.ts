@@ -1,3 +1,4 @@
+import { objectMetadataOperations } from '@/app/providers/objectAccess';
 import { invoke } from '@tauri-apps/api/core';
 import { encodeObjectKeyForUrl } from '@/app/utils/objectKeyUrl';
 import type {
@@ -35,6 +36,7 @@ function toMinioConfigInput(config: MinioStorageConfig) {
 }
 
 export const minioProvider: StorageProviderAdapter<MinioStorageConfig> = {
+  ...objectMetadataOperations,
   listBuckets: async (config) => {
     requireMinioFields(config);
     return invoke<StorageBucket[]>('list_minio_buckets', {

@@ -1,3 +1,4 @@
+import { objectMetadataOperations } from '@/app/providers/objectAccess';
 import { invoke } from '@tauri-apps/api/core';
 import { encodeObjectKeyForUrl } from '@/app/utils/objectKeyUrl';
 import type {
@@ -36,6 +37,7 @@ function toAwsConfigInput(config: AwsStorageConfig) {
 }
 
 export const awsProvider: StorageProviderAdapter<AwsStorageConfig> = {
+  ...objectMetadataOperations,
   listBuckets: async (config) => {
     requireAwsFields(config);
     return invoke<StorageBucket[]>('list_aws_buckets', {

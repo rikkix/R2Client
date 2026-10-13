@@ -1,7 +1,9 @@
 'use client';
+import { usePreviewUrl } from '@/app/hooks/usePreviewUrl';
+import { useObjectActionStore } from '@/app/stores/objectActionStore';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Image, Spin, App } from 'antd';
+import { Image, App } from 'antd';
 import {
   LinkOutlined,
   CopyOutlined,
@@ -19,7 +21,6 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import dynamic from 'next/dynamic';
 import {
   buildPublicUrl,
-  generateSignedUrl,
   hasSigningCredentials,
   uploadContent,
   isBucketPublic,
@@ -108,8 +109,9 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
   const { message } = App.useApp();
   const { file, files, close, navigate } = usePreviewStore();
   const isOpen = !!file;
-  const [signedUrl, setSignedUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const openAction = useObjectActionStore((state) => state.open);
+  const objectActionOpen = useObjectActionStore((state) => !!state.action);
+  const fileUrl = usePreviewUrl(config, file?.key ?? '', !!file);
   const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
@@ -129,7 +131,7 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
 
   // Keyboard navigation: arrow keys to switch files
   useEffect(() => {
-    if (!isOpen || previewableFiles.length <= 1) return;
+    if (!isOpen || objectActionOpen || previewableFiles.length <= 1) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
@@ -152,7 +154,7 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, previewableFiles.length, navigate]);
+  }, [isOpen, objectActionOpen, previewableFiles.length, navigate]);
 
   const hasCredentials = hasSigningCredentials(config);
   const isPublic = isBucketPublic(config);
@@ -174,42 +176,17 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
     [file, config, hasCredentials, message, onFileUpdated]
   );
 
-  useEffect(() => {
-    if (!isOpen || !file) {
-      setSignedUrl(null);
-      return;
-    }
-
-    if (isPublic && config) {
-      // Public bucket: reuse the provider's URL builder so the object key is
-      // encoded consistently (spaces, unicode, reserved characters) — no signing.
-      setSignedUrl(buildPublicUrl(config, file.key));
-      return;
-    }
-
-    if (config && hasCredentials) {
-      // Private bucket: auto-sign the URL for the preview.
-      setLoading(true);
-      generateSignedUrl(config, file.key)
-        .then(setSignedUrl)
-        .catch(() => setSignedUrl(null))
-        .finally(() => setLoading(false));
-      return;
-    }
-
-    setSignedUrl(null);
-  }, [isOpen, file, config, hasCredentials, isPublic]);
-
-  if (!file) return null;
-
-  const fileUrl = signedUrl;
-  const isImage = isImageFile(file.name);
-  const isVideo = isVideoFile(file.name);
-  const isAudio = isAudioFile(file.name);
-  const isPdf = isPdfFile(file.name);
-  const isText = isTextFile(file.name);
+  const isImage = !!file && isImageFile(file.name);
+  const isVideo = !!file && isVideoFile(file.name);
+  const isAudio = !!file && isAudioFile(file.name);
+  const isPdf = !!file && isPdfFile(file.name);
+  const isText = !!file && isTextFile(file.name);
   const { thumbnailSrc: videoPoster } = useVideoThumbnail(isVideo ? fileUrl : null);
-
+  const publicUrl = file && config && isPublic ? buildPublicUrl(config, file.key) : null;
+  if (!file) return null;
+  function generateLink() {
+    if (config && file) openAction({ kind: 'signed-url', config, key: file.key, name: file.name });
+  }
   const getModalWidth = () => {
     const width = windowSize.width || (typeof window !== 'undefined' ? window.innerWidth : 1024);
     if (width < 640) return '95%';
@@ -223,12 +200,12 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
   };
 
   async function handleCopyUrl() {
-    if (!fileUrl) {
+    if (!publicUrl) {
       message.warning('No public domain configured');
       return;
     }
     try {
-      await navigator.clipboard.writeText(fileUrl);
+      await navigator.clipboard.writeText(publicUrl);
       message.success('URL copied to clipboard');
     } catch {
       message.error('Failed to copy URL');
@@ -236,12 +213,12 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
   }
 
   async function handleOpenUrl() {
-    if (!fileUrl) {
+    if (!publicUrl) {
       message.warning('No public domain configured');
       return;
     }
     try {
-      await openUrl(fileUrl);
+      await openUrl(publicUrl);
     } catch {
       message.error('Failed to open URL');
     }
@@ -272,10 +249,15 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
     <>
       {/* Left: copy URL */}
       <span className="left" style={{ display: 'flex', gap: 6 }}>
-        <button className="btn" onClick={handleOpenUrl} disabled={!fileUrl}>
+        {!isPublic && (
+          <button className="btn" onClick={generateLink} disabled={!hasCredentials}>
+            Generate signed URL
+          </button>
+        )}
+        <button className="btn" onClick={handleOpenUrl} disabled={!publicUrl}>
           <LinkOutlined /> Open URL
         </button>
-        <button className="btn" onClick={handleCopyUrl} disabled={!fileUrl}>
+        <button className="btn" onClick={handleCopyUrl} disabled={!publicUrl}>
           <CopyOutlined /> Copy URL
         </button>
       </span>
@@ -317,9 +299,7 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
     >
       {/* Preview area */}
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
-        {loading ? (
-          <Spin />
-        ) : isImage && fileUrl ? (
+        {isImage && fileUrl ? (
           <Image
             src={fileUrl}
             alt={file.name}
@@ -368,7 +348,7 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
       </div>
 
       {/* URL display */}
-      {fileUrl ? (
+      {publicUrl ? (
         <div
           style={{
             background: 'var(--bg-sunken)',
@@ -381,15 +361,19 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
             lineHeight: 1.5,
           }}
         >
-          {fileUrl}
+          {publicUrl}
         </div>
       ) : needsCredentials ? (
         <p style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--text-muted)', margin: 0 }}>
-          S3 credentials required for signed URL. Configure in Account Settings.
+          S3 credentials required for private previews. Configure in Account Settings.
         </p>
       ) : (
         <p style={{ textAlign: 'center', fontSize: 12.5, color: 'var(--text-muted)', margin: 0 }}>
-          Unable to generate file URL
+          {isPublic
+            ? 'No public URL configured'
+            : fileUrl
+              ? 'Private preview uses authenticated access. Generate a signed URL only when you want to share this file.'
+              : 'Loading private preview…'}
         </p>
       )}
     </Modal>

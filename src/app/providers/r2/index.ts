@@ -1,3 +1,4 @@
+import { objectMetadataOperations } from '@/app/providers/objectAccess';
 import { invoke } from '@tauri-apps/api/core';
 import { encodeObjectKeyForUrl } from '@/app/utils/objectKeyUrl';
 import type {
@@ -32,6 +33,7 @@ function toR2ConfigInput(config: R2StorageConfig) {
 }
 
 export const r2Provider: StorageProviderAdapter<R2StorageConfig> = {
+  ...objectMetadataOperations,
   listBuckets: async (config) => {
     requireR2Credentials(config);
     return invoke<StorageBucket[]>('list_r2_buckets', {

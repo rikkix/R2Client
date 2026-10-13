@@ -143,9 +143,9 @@ pub async fn batch_move_rustfs_objects(
 pub async fn generate_rustfs_signed_url(
     config: RustfsConfigInput,
     key: String,
-    expires_in_secs: Option<u64>,
+    expires_in: u64,
 ) -> Result<String, String> {
-    minio_commands::generate_minio_signed_url(config.into(), key, expires_in_secs).await
+    minio_commands::generate_minio_signed_url(config.into(), key, expires_in).await
 }
 
 #[tauri::command]

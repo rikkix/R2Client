@@ -1,8 +1,12 @@
+import { useEffect, useState } from 'react';
+import { useObjectActionStore } from '@/app/stores/objectActionStore';
+import { useObjectRevisionStore } from '@/app/stores/objectRevisionStore';
+import { getProviderAdapter } from '@/app/providers/index';
+import type { ObjectMetadata } from '@/app/providers/types';
 import {
   CloseOutlined,
   DownloadOutlined,
   LinkOutlined,
-  MoreOutlined,
   FolderOutlined,
   FileImageOutlined,
   VideoCameraOutlined,
@@ -15,7 +19,7 @@ import { App } from 'antd';
 import { FileItem } from '@/app/hooks/useR2Files';
 import {
   buildPublicUrl,
-  generateSignedUrl,
+  hasSigningCredentials,
   isBucketPublic,
   type StorageConfig,
 } from '@/app/lib/r2cache';
@@ -141,22 +145,45 @@ export default function Inspector({
 }: InspectorProps) {
   const { message } = App.useApp();
   const type = itemType(item);
+  const openAction = useObjectActionStore((state) => state.open);
+  const revision = useObjectRevisionStore((state) => state.revision);
+  const [objectMetadata, setObjectMetadata] = useState<ObjectMetadata | null>(null);
+  const metadataScope = JSON.stringify([storageConfig, item.key, item.isFolder, revision]);
+  useEffect(() => {
+    let cancelled = false;
+    setObjectMetadata(null);
+    if (!item.isFolder && storageConfig && hasSigningCredentials(storageConfig)) {
+      void getProviderAdapter(storageConfig)
+        .getObjectMetadata(storageConfig, item.key)
+        .then((value) => {
+          if (!cancelled) setObjectMetadata(value);
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metadataScope]);
+  function openObjectAction(kind: 'metadata' | 'signed-url') {
+    if (storageConfig) openAction({ kind, config: storageConfig, key: item.key, name: item.name });
+  }
 
   const sizeLabel = item.isFolder ? '—' : formatBytes(item.size || 0);
   const modLabel = item.lastModified ? dayjs(item.lastModified).format('YYYY-MM-DD HH:mm') : '—';
 
   const isPublic = isBucketPublic(storageConfig);
-  // Only treat as a public link when the bucket is marked public (and, for R2, a
-  // public domain is configured). Otherwise buildPublicUrl would return the S3 API
-  // endpoint (e.g. *.r2.cloudflarestorage.com), which requires signing — so we fall
-  // back to a temporary signed URL instead.
   const publicUrl =
     !item.isFolder && isPublic && storageConfig ? buildPublicUrl(storageConfig, item.key) : null;
 
   async function handleCopyUrl() {
     if (item.isFolder || !storageConfig) return;
+    if (!publicUrl) {
+      openObjectAction('signed-url');
+      return;
+    }
     try {
-      const url = publicUrl ?? (await generateSignedUrl(storageConfig, item.key));
+      const url = publicUrl;
       if (!url) {
         message.warning('No public domain or credentials available for this bucket');
         return;
@@ -197,7 +224,7 @@ export default function Inspector({
 
       <div className="inspector-body">
         {/* Action buttons */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
           {onDownload && !item.isFolder && (
             <button className="btn btn-sm" onClick={() => onDownload(item)}>
               <DownloadOutlined style={{ fontSize: 12 }} /> Download
@@ -207,14 +234,17 @@ export default function Inspector({
             <button
               className="btn btn-sm"
               onClick={handleCopyUrl}
-              title={isPublic ? 'Copy public URL' : 'Copy temporary signed URL'}
+              title={isPublic ? 'Copy public URL' : 'Generate signed URL'}
             >
-              <LinkOutlined style={{ fontSize: 12 }} /> {isPublic ? 'Copy link' : 'Copy URL'}
+              <LinkOutlined style={{ fontSize: 12 }} />{' '}
+              {isPublic ? 'Copy link' : 'Generate signed URL'}
             </button>
           )}
-          <button className="btn btn-sm" style={{ padding: '0 8px' }}>
-            <MoreOutlined style={{ fontSize: 12 }} />
-          </button>
+          {!item.isFolder && hasSigningCredentials(storageConfig) && (
+            <button className="btn btn-sm" onClick={() => openObjectAction('metadata')}>
+              Edit metadata
+            </button>
+          )}
         </div>
 
         {/* KV pairs */}
@@ -224,9 +254,8 @@ export default function Inspector({
         {item.isFolder && <KV label="Items" value="—" />}
         {!item.isFolder && (
           <>
-            <KV label="ETag" value="—" />
-            <KV label="Storage class" value="STANDARD" />
-            <KV label="Encryption" value="AES-256" />
+            <KV label="ETag" value={objectMetadata?.etag ?? '—'} />
+            <KV label="Storage class" value={objectMetadata?.storageClass ?? '—'} />
             <KV
               label="Visibility"
               value={

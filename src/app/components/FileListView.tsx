@@ -1,3 +1,4 @@
+import type { StorageConfig } from '@/app/providers/types';
 /**
  * FileListView — CSS-grid list with sticky headers, density-aware row heights,
  * inline actions, and react-virtuoso virtualization.
@@ -32,6 +33,7 @@ interface FolderMetadata {
 
 interface FileListViewProps {
   items: FileItem[];
+  storageConfig?: StorageConfig | null;
   selectedKeys: Set<string>;
   metadata: Record<string, FolderMetadata>;
   nameSort: SortOrder;
@@ -105,6 +107,7 @@ const VirtuosoItem = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElem
 
 export default function FileListView({
   items,
+  storageConfig,
   selectedKeys,
   metadata,
   nameSort,
@@ -191,6 +194,7 @@ export default function FileListView({
           const folderMeta = item.isFolder ? metadata[item.key] : undefined;
           return (
             <FileContextMenu
+              storageConfig={storageConfig}
               item={item}
               onDownload={onDownload}
               onRename={onRename}

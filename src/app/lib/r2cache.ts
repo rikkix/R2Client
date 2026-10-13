@@ -1,3 +1,4 @@
+import { validateSignedUrlLifetime } from './signedUrl';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import {
@@ -129,9 +130,13 @@ export async function batchMoveObjects(
 export async function generateSignedUrl(
   config: StorageConfig,
   key: string,
-  expiresIn: number = 3600
+  expiresIn: number
 ): Promise<string> {
-  return getProviderAdapter(config).generateSignedUrl(config, key, expiresIn);
+  return getProviderAdapter(config).generateSignedUrl(
+    config,
+    key,
+    validateSignedUrlLifetime(expiresIn)
+  );
 }
 
 export async function uploadFile(
@@ -167,7 +172,7 @@ export function buildPublicUrl(config: StorageConfig, key: string): string | nul
 /**
  * Whether a bucket's objects should be served via direct (unsigned) public URLs.
  *
- * This is the single source of truth for the public-vs-signed decision used by
+ * This is the single source of truth for the public-vs-authenticated decision used by
  * the preview, inspector, grid thumbnails and status bar. A bucket is public
  * only when its `isPublic` flag is set AND a usable public URL can be built:
  * R2 has no implicit public endpoint, so it additionally requires a custom

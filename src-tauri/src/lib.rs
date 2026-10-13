@@ -1,9 +1,10 @@
 use std::path::Path;
 #[cfg(target_os = "macos")]
 use tauri::menu::{PredefinedMenuItem, Submenu};
+#[cfg(not(target_os = "macos"))]
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
@@ -14,6 +15,9 @@ mod db;
 mod download;
 mod mount;
 mod move_transfer;
+mod object_access;
+mod object_metadata;
+mod preview;
 mod providers;
 mod r2;
 #[cfg(test)]
@@ -108,6 +112,7 @@ async fn init_db_with_recovery<R: tauri::Runtime>(
 pub fn run() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
+        .manage(preview::PreviewManager::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_http::init())
@@ -238,51 +243,58 @@ pub fn run() {
                 });
             }
 
-            // Setup system tray
-            let about_item = MenuItem::with_id(app, "about", "About", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&about_item, &quit_item])?;
+            #[cfg(not(target_os = "macos"))]
+            {
+                // Setup system tray
+                let about_item = MenuItem::with_id(app, "about", "About", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                let tray_menu = Menu::with_items(app, &[&about_item, &quit_item])?;
 
-            // Use default window icon if available (bundled icon in release builds)
-            let tray_builder = TrayIconBuilder::new();
-            let tray_builder = if let Some(icon) = app.default_window_icon() {
-                tray_builder.icon(icon.clone())
-            } else {
-                // No icon in dev mode - tray will show without icon
-                tray_builder
-            };
+                // Use default window icon if available (bundled icon in release builds)
+                let tray_builder = TrayIconBuilder::new();
+                let tray_builder = if let Some(icon) = app.default_window_icon() {
+                    tray_builder.icon(icon.clone())
+                } else {
+                    // No icon in dev mode - tray will show without icon
+                    tray_builder
+                };
 
-            let _tray = tray_builder
-                .menu(&tray_menu)
-                .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "about" => {
-                        show_about_dialog(app);
-                    }
-                    "quit" => {
-                        app.exit(0);
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                let _tray = tray_builder
+                    .menu(&tray_menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "about" => {
+                            show_about_dialog(app);
                         }
-                    }
-                })
-                .build(app)?;
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    })
+                    .build(app)?;
+            }
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            preview::create_preview_session,
+            preview::release_preview_session,
+            object_metadata::get_object_metadata,
+            object_metadata::update_object_metadata,
             // Upload commands
             upload::upload_file,
             upload::cancel_upload,
@@ -457,6 +469,7 @@ pub fn run() {
             // menu, or simply closing the last window. Releasing the NFS mounts
             // here keeps the OS from leaving dead mountpoints behind.
             if let tauri::RunEvent::Exit = event {
+                app_handle.state::<preview::PreviewManager>().shutdown();
                 mount::manager().unmount_all(app_handle);
             }
         });

@@ -293,3 +293,12 @@ Account configurations are stored locally in a SQLite database:
 ## IDE Setup
 
 - [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+
+## Personal Build Behavior
+
+- macOS runs with its Dock icon and application menu, without a menu bar icon.
+- Private file previews and thumbnails use authenticated object reads through a local, read-only preview service. Preview addresses are never offered as sharing links.
+- Use **Generate signed URL** from a file's context menu, Inspector, or private preview. Choose a lifetime on every new dialog; no lifetime is preselected. The supported range is 1 second to 7 days. Existing internal upload/download signing is unchanged.
+- Use **Edit metadata** from a file's context menu or Inspector to edit HTTP headers and custom metadata. Metadata changes use a conditional server-side copy to the same key, preserving the object body. Clearing Content-Type resets it to application/octet-stream.
+- Metadata viewing supports large objects; saving is limited to 5 GiB in this version. Conflicts or uncertain save results require reloading metadata before retrying.
+- R2 is the primary target. Other S3-compatible providers share the implementation, but live compatibility has not been verified. Updates are rejected when existing access or encryption settings cannot be preserved safely.

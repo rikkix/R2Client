@@ -441,10 +441,11 @@ pub async fn batch_move_aws_objects(
 pub async fn generate_aws_signed_url(
     config: AwsConfigInput,
     key: String,
-    expires_in: Option<u64>,
+    expires_in: u64,
 ) -> Result<String, String> {
     let aws_config: aws::AwsConfig = config.into();
-    let expires_in_secs = expires_in.unwrap_or(3600);
+    crate::object_access::validate_signed_url_lifetime(expires_in)?;
+    let expires_in_secs = expires_in;
 
     aws::generate_presigned_url(&aws_config, &key, expires_in_secs)
         .await

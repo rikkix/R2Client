@@ -1,3 +1,4 @@
+import { objectMetadataOperations } from '@/app/providers/objectAccess';
 import { invoke } from '@tauri-apps/api/core';
 import { encodeObjectKeyForUrl } from '@/app/utils/objectKeyUrl';
 import type {
@@ -35,6 +36,7 @@ function toRustfsConfigInput(config: RustfsStorageConfig) {
 }
 
 export const rustfsProvider: StorageProviderAdapter<RustfsStorageConfig> = {
+  ...objectMetadataOperations,
   listBuckets: async (config) => {
     requireRustfsFields(config);
     return invoke<StorageBucket[]>('list_rustfs_buckets', {

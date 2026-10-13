@@ -466,10 +466,11 @@ pub async fn batch_move_minio_objects(
 pub async fn generate_minio_signed_url(
     config: MinioConfigInput,
     key: String,
-    expires_in: Option<u64>,
+    expires_in: u64,
 ) -> Result<String, String> {
     let minio_config: minio::MinioConfig = config.into();
-    let expires_in_secs = expires_in.unwrap_or(3600);
+    crate::object_access::validate_signed_url_lifetime(expires_in)?;
+    let expires_in_secs = expires_in;
 
     minio::generate_presigned_url(&minio_config, &key, expires_in_secs)
         .await

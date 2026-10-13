@@ -33,7 +33,7 @@ export interface BaseStorageConfig {
   publicDomain?: string;
   publicDomainScheme?: string;
   /** When true, object URLs are served publicly (unsigned). When false, the
-   *  preview/copy actions generate temporary signed URLs instead. */
+   *  previews use authenticated reads and sharing links require explicit generation. */
   isPublic?: boolean;
   /** R2 only: optional path segment prepended to the object key under the
    *  public domain, e.g. domain "cdn.example.com" + prefix "assets" →
@@ -128,7 +128,14 @@ export interface StorageProviderAdapter<TConfig extends StorageConfig = StorageC
     operations: MoveOperation[],
     batchId?: string
   ) => Promise<BatchMoveResult>;
-  generateSignedUrl: (config: TConfig, key: string, expiresIn?: number) => Promise<string>;
+  generateSignedUrl: (config: TConfig, key: string, expiresIn: number) => Promise<string>;
+  getObjectMetadata: (config: TConfig, key: string) => Promise<ObjectMetadata>;
+  updateObjectMetadata: (
+    config: TConfig,
+    key: string,
+    baseline: ObjectMetadata,
+    changes: MetadataChanges
+  ) => Promise<ObjectMetadata>;
   uploadFile: (config: TConfig, input: UploadFileInput) => Promise<UploadFileResult>;
   uploadContent: (
     config: TConfig,
@@ -139,4 +146,18 @@ export interface StorageProviderAdapter<TConfig extends StorageConfig = StorageC
   syncBucket: (config: TConfig) => Promise<SyncResult>;
   buildBucketBaseUrl: (config: TConfig) => string | null;
   buildPublicUrl: (config: TConfig, key: string) => string | null;
+}
+
+export interface ObjectMetadata {
+  headers: Record<string, string | null>;
+  customMetadata: Record<string, string>;
+  size: number;
+  etag: string;
+  lastModified: string | null;
+  storageClass: string;
+  missingMetadata: number;
+}
+export interface MetadataChanges {
+  headers: Record<string, string | null>;
+  customMetadata: Record<string, string | null>;
 }
