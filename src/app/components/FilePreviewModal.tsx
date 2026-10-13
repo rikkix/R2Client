@@ -7,7 +7,7 @@ import { Image, App } from 'antd';
 import {
   LinkOutlined,
   CopyOutlined,
-  DownloadOutlined,
+  CloseOutlined,
   FileOutlined,
   FileImageOutlined,
   PlaySquareOutlined,
@@ -280,7 +280,7 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
       )}
 
       <button className="btn btn-primary" onClick={close}>
-        <DownloadOutlined /> Close
+        <CloseOutlined /> Close
       </button>
     </>
   );
