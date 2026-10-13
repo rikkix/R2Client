@@ -1,17 +1,4 @@
-/**
- * Scrub credential-shaped strings out of text before it enters the session
- * log. The log rides inside a public GitHub issue, so anything shaped like an
- * access key, secret, signature, or bearer token is replaced as the line is
- * written — never stored, so no later step can forget to strip it.
- *
- * This is about credentials only. Object keys, bucket names and local paths
- * are left alone: they are what makes a log line diagnosable, and the dialog
- * shows every line to the reporter before anything leaves the app.
- *
- * The hex rule is deliberately broad: R2 access key IDs (32 hex), R2 secrets
- * and SigV4 signatures (64 hex), and Cloudflare account IDs inside endpoint
- * hostnames (32 hex) all match. ETags match too; losing them costs nothing.
- */
+/** Scrub credentials from optional local diagnostic output. */
 const RULES: ReadonlyArray<readonly [RegExp, string]> = [
   // AWS-style access key IDs (AKIA…, ASIA…).
   [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, '[redacted-key-id]'],

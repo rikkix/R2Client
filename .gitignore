@@ -1,6 +1,9 @@
 # Dependencies
 node_modules
 
+# Generated local viewer assets
+public/vendor/
+
 # Next.js build output
 .next
 out

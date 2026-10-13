@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { App } from 'antd';
-import { BugOutlined, CheckOutlined, CloseCircleFilled, CopyOutlined } from '@ant-design/icons';
+import { CheckOutlined, CloseCircleFilled, CopyOutlined } from '@ant-design/icons';
 import Modal, { ABOVE_ANTD_MODALS_Z_INDEX } from '@/app/components/ui/Modal';
 import {
   FaultFacts,
@@ -10,17 +10,14 @@ import {
   FaultList,
   FaultMessage,
 } from '@/app/components/TransferErrorModalParts';
-import { redactSecrets } from '@/app/lib/diagnostics/redact';
 import {
   failureTitle,
   formatCount,
   formatFailureDetails,
   isCountKind,
-  singleFailureTitle,
   type TransferFailure,
   type TransferFailureKind,
 } from '@/app/lib/transferFailure';
-import { useReportStore } from '@/app/stores/reportStore';
 import { selectFocusedFailure, useTransferErrorStore } from '@/app/stores/transferErrorStore';
 import { formatBytes } from '@/app/utils/formatBytes';
 
@@ -61,8 +58,7 @@ function useCopiedFlash(): [string | null, (id: string) => void] {
  * backdrop, where keystrokes would otherwise keep landing, and onto the body
  * rather than a button, so a stray Space or Enter mid-typing cannot dismiss a
  * failure unread — and back to where it was when the modal closes, unless
- * something else took it meanwhile (the report dialog this modal hands off to
- * focuses its own title field).
+ * something else took it meanwhile.
  */
 function useDialogFocus(target: RefObject<HTMLElement | null>): void {
   // Read on the first render, before this dialog commits and moves focus.
@@ -112,17 +108,6 @@ function TransferErrorDialog() {
     }
   };
 
-  const handleReport = () => {
-    // The report becomes a public GitHub issue, so credential-shaped text (key
-    // IDs, account IDs in endpoint hosts) is scrubbed from both fields the way
-    // the session log scrubs it. The clipboard copy stays verbatim.
-    useReportStore.getState().open({
-      title: redactSecrets(`${singleFailureTitle(focused)}: ${focused.name}`),
-      description: redactSecrets(formatFailureDetails(focused, format)),
-    });
-    close();
-  };
-
   return (
     <Modal
       open
@@ -142,10 +127,6 @@ function TransferErrorDialog() {
             <button type="button" className="btn btn-ghost" onClick={handleCopy}>
               {copied ? <CheckOutlined /> : <CopyOutlined />}
               {copied ? 'Copied' : 'Copy details'}
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={handleReport}>
-              <BugOutlined />
-              Report a problem
             </button>
             {failures.length > 1 && (
               <button type="button" className="btn btn-ghost" onClick={clear}>
@@ -174,7 +155,7 @@ function TransferErrorDialog() {
 export default function TransferErrorModal() {
   const isOpen = useTransferErrorStore((s) => s.isOpen);
 
-  // Mounted only while open (the ReportProblemModal pattern), so the copy
+  // Mounted only while open, so the copy
   // flash and its timer never outlive the modal.
   if (!isOpen) return null;
   return <TransferErrorDialog />;

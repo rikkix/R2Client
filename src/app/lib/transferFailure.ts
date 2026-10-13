@@ -139,7 +139,7 @@ const hasText = (value: string | null | undefined): value is string =>
   typeof value === 'string' && value.trim() !== '';
 
 /**
- * Plain text for the clipboard and the report description:
+ * Plain text for the local clipboard:
  *
  *   Upload failed — IMG_2214.CR2
  *   Account: Greenwoods R2

@@ -5,10 +5,13 @@ import { Spin, Typography, Button, Space, Tooltip } from 'antd';
 import { FileTextOutlined, FormatPainterOutlined, SaveOutlined } from '@ant-design/icons';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { invoke } from '@tauri-apps/api/core';
-import Editor, { type Monaco } from '@monaco-editor/react';
+import Editor, { loader, type Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import DownloadProgress from '@/app/components/preview/DownloadProgress';
 import { useThemeStore } from '@/app/stores/themeStore';
+
+// Load the installed editor and its workers from the app bundle.
+loader.config({ paths: { vs: '/vendor/monaco/vs' } });
 
 const { Text } = Typography;
 

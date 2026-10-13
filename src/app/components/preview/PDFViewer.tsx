@@ -10,6 +10,14 @@ import { useThemeStore } from '@/app/stores/themeStore';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 
+pdfjs.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
+const PDF_OPTIONS = {
+  cMapUrl: '/vendor/pdfjs/cmaps/',
+  cMapPacked: true,
+  standardFontDataUrl: '/vendor/pdfjs/standard_fonts/',
+  wasmUrl: '/vendor/pdfjs/wasm/',
+};
+
 interface PDFViewerProps {
   url: string;
   showControls?: boolean;
@@ -56,8 +64,6 @@ export default function PDFViewer({
   const [scale, setScale] = useState<number>(getResponsiveScale());
 
   useEffect(() => {
-    pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
-
     // Detect mobile device and handle responsive resize
     const handleResize = () => {
       const width = window.innerWidth;
@@ -294,6 +300,7 @@ export default function PDFViewer({
           ) : (
             <Document
               file={file}
+              options={PDF_OPTIONS}
               onLoadSuccess={handleDocumentLoadSuccess}
               onLoadError={handleDocumentLoadError}
               loading={

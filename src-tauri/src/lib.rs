@@ -27,11 +27,11 @@ mod upload;
 
 const APP_NAME: &str = "R2 Uploader";
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
-const APP_DESCRIPTION: &str = "A desktop application for managing Cloudflare R2 storage buckets.";
+const APP_DESCRIPTION: &str =
+    "An unofficial personal modification; not verified for production use.";
 const APP_AUTHOR: &str = "Peilin Wu";
 const APP_LICENSE: &str = "MIT";
 const APP_COPYRIGHT: &str = "© 2025 Peilin Wu";
-const APP_WEBSITE: &str = "https://github.com/dickwu/r2";
 
 fn show_about_dialog<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     let about_message = format!(
@@ -42,16 +42,8 @@ fn show_about_dialog<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     app.dialog()
         .message(&about_message)
         .title(APP_NAME)
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            "OK".to_string(),
-            "View on GitHub".to_string(),
-        ))
-        .show(move |result| {
-            // If Cancel (View on GitHub) was clicked, open the website
-            if !result {
-                let _ = tauri_plugin_opener::open_url(APP_WEBSITE, None::<&str>);
-            }
-        });
+        .buttons(MessageDialogButtons::Ok)
+        .show(|_| {});
 }
 
 async fn confirm_db_reset<R: tauri::Runtime>(
@@ -114,10 +106,7 @@ pub fn run() {
     let mut builder = tauri::Builder::default()
         .manage(preview::PreviewManager::default())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_video_thumbnail::init());

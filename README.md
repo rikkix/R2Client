@@ -5,6 +5,7 @@ This is an unofficial, unverified modification of the [original R2 Client](https
 Personal changes:
 
 - Remove the macOS menu bar icon.
+- Remove upstream updates and bug reporting; load preview assets locally.
 - Require explicit signed URL generation with a selected lifetime; use authenticated reads for private previews.
 - Add file metadata editing, with saves limited to 5 GiB.
 

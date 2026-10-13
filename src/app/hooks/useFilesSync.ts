@@ -10,7 +10,6 @@ import {
 import { useStorageNamespace } from '@/app/hooks/useStorageNamespace';
 import { useFolderSizeStore } from '@/app/stores/folderSizeStore';
 import { useSyncStore } from '@/app/stores/syncStore';
-import { logSession } from '@/app/lib/diagnostics/sessionLog';
 import { matchesSyncRun, type SyncScope } from '@/app/utils/syncScope';
 
 interface BackgroundSyncProgressEvent extends SyncScope {
@@ -76,7 +75,6 @@ export function useFilesSync(config: StorageConfig | null) {
       if (!current()) return;
       const message = describeError(error);
       useSyncStore.getState().failBackgroundSync(message);
-      logSession('app', 'error', `Background sync error: ${message}`);
     }
   }, []);
 
@@ -121,13 +119,6 @@ export function useFilesSync(config: StorageConfig | null) {
         useSyncStore.getState().completeBackgroundSync(event.total_objects, event.total_bytes);
         useSyncStore.getState().setTotalFiles(event.total_objects);
         const skipped = event.skipped_prefixes ?? [];
-        if (skipped.length > 0) {
-          logSession(
-            'app',
-            'warn',
-            `Sync finished with ${skipped.length} skipped folder(s): ${skipped.join(', ')}`
-          );
-        }
         if (skipped.length === 0) {
           useSyncStore
             .getState()
@@ -149,7 +140,6 @@ export function useFilesSync(config: StorageConfig | null) {
         if (!accepts(event)) return;
         session.run = null;
         useSyncStore.getState().failBackgroundSync(event.error);
-        logSession('app', 'error', `Background sync error: ${event.error}`);
       }),
       addListener<SyncScope>('background-sync-cancelled', (event) => {
         if (!accepts(event)) return;

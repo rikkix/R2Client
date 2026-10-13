@@ -488,14 +488,7 @@ export default function SettingsModal({
           <div className="settings-nav-spacer" />
           <div className="settings-nav-foot">
             <div className="settings-nav-version">R2 Client</div>
-            <a
-              className="settings-nav-link"
-              href="https://github.com/dickwu/r2"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Documentation ↗
-            </a>
+            <span className="settings-nav-version">Personal build</span>
           </div>
         </nav>
 

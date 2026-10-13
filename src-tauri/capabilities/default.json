@@ -6,12 +6,7 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "os:allow-platform",
-    "os:allow-version",
-    "os:allow-arch",
     "http:default",
-    "updater:default",
-    "process:allow-restart",
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save",
@@ -25,9 +20,12 @@
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "https://api.cloudflare.com/*" },
-        { "url": "https://*" },
-        { "url": "http://**" }
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "http://**"
+        }
       ]
     }
   ]
