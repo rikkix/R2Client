@@ -2149,9 +2149,53 @@ html.dark .download-task-list > div::-webkit-scrollbar-thumb:hover {
   font-size: 11px;
   color: var(--text-muted);
   font-family: var(--font-mono);
+  min-width: 0;
+  overflow: hidden;
 }
 .statusbar .spacer {
   flex: 1;
+  min-width: 0;
+}
+.sb-overview {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.sb-folder-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex: 0 0 340px;
+  max-width: 45%;
+  min-width: 0;
+  height: 100%;
+  white-space: nowrap;
+}
+.sb-folder-status.error {
+  color: var(--danger);
+}
+.sb-folder-status .anticon {
+  flex-shrink: 0;
+}
+.sb-folder-message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.sb-folder-retry {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 2px 0;
 }
 .sb-stat {
   display: flex;
@@ -3080,10 +3124,18 @@ html.dark .download-task-list > div::-webkit-scrollbar-thumb:hover {
 }
 
 /* ── Settings panels (handoff) ── */
+.modal-body.settings-modal-body {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
 .settings-shell {
   display: flex;
-  min-height: 540px;
-  max-height: min(640px, 78vh);
+  flex: 1;
+  height: min(640px, 65vh);
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .settings-nav {
@@ -3094,8 +3146,12 @@ html.dark .download-task-list > div::-webkit-scrollbar-thumb:hover {
   background: var(--bg-sunken);
   border-right: 1px solid var(--border);
   gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .settings-nav-item {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -3136,6 +3192,7 @@ html.dark .download-task-list > div::-webkit-scrollbar-thumb:hover {
   flex: 1;
 }
 .settings-nav-foot {
+  flex-shrink: 0;
   padding: 10px 10px 4px;
   border-top: 1px solid var(--border);
   margin: 6px -2px 0;
@@ -3151,7 +3208,11 @@ html.dark .download-task-list > div::-webkit-scrollbar-thumb:hover {
 
 .settings-body {
   flex: 1;
+  min-height: 0;
+  min-width: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 22px 26px;
   background: var(--bg-app);
 }

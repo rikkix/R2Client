@@ -20,6 +20,7 @@ interface TextViewerProps {
   filename?: string;
   maxHeight?: string;
   editable?: boolean;
+  maxBytes?: number;
   onLoadSuccess?: () => void;
   onLoadError?: (error: Error) => void;
   onSave?: (content: string) => Promise<void>;
@@ -100,6 +101,7 @@ export default function TextViewer({
   filename = '',
   maxHeight = '700px',
   editable = false,
+  maxBytes,
   onLoadSuccess,
   onLoadError,
   onSave,
@@ -130,6 +132,7 @@ export default function TextViewer({
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
     setContent(null);
@@ -147,15 +150,20 @@ export default function TextViewer({
 
     const fetchWithProgress = async () => {
       try {
-        const response = await tauriFetch(url);
+        const response = await tauriFetch(url, { signal: controller.signal });
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
         const contentLength = response.headers.get('content-length');
         const total = contentLength ? parseInt(contentLength, 10) : null;
+        if (maxBytes != null && total != null && total > maxBytes) {
+          await response.body?.cancel();
+          throw new Error('Detected text preview is limited to 5 MiB');
+        }
 
         if (!response.body) {
+          if (maxBytes != null) throw new Error('Text preview returned no readable body');
           const text = await response.text();
           if (!cancelled) {
             setContent(text);
@@ -179,6 +187,10 @@ export default function TextViewer({
 
           chunks.push(value);
           loaded += value.length;
+          if (maxBytes != null && loaded > maxBytes) {
+            await reader.cancel();
+            throw new Error('Detected text preview is limited to 5 MiB');
+          }
           setDownloadProgress({ loaded, total });
         }
 
@@ -197,7 +209,7 @@ export default function TextViewer({
       } catch (err) {
         if (cancelled) return;
         let fetchError: unknown = err;
-        if (isScopeError(err)) {
+        if (isScopeError(err) && maxBytes == null) {
           try {
             await fetchViaBackend();
             return;
@@ -221,8 +233,9 @@ export default function TextViewer({
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [url, onLoadSuccess, onLoadError]);
+  }, [url, maxBytes, onLoadSuccess, onLoadError]);
 
   // Reset edited content when original content changes
   useEffect(() => {

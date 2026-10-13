@@ -1,5 +1,7 @@
 'use client';
 import { usePreviewUrl } from '@/app/hooks/usePreviewUrl';
+import { usePreviewKind } from '@/app/hooks/usePreviewKind';
+import { DETECTED_TEXT_LIMIT, type PreviewKind } from '@/app/lib/previewType';
 import { useObjectActionStore } from '@/app/stores/objectActionStore';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -33,11 +35,6 @@ import Modal from '@/app/components/ui/Modal';
 
 const PDFViewer = dynamic(() => import('@/app/components/preview/PDFViewer'), { ssr: false });
 const TextViewer = dynamic(() => import('@/app/components/preview/TextViewer'), { ssr: false });
-
-const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
-const VIDEO_EXTENSIONS = ['mp4', 'webm', 'ogv', 'mov', 'm4v'];
-const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'opus'];
-const PDF_EXTENSIONS = ['pdf'];
 
 const TEXT_CONTENT_TYPES: Record<string, string> = {
   js: 'application/javascript',
@@ -74,28 +71,16 @@ function getContentType(filename: string): string {
   return TEXT_CONTENT_TYPES[getExt(filename)] || 'text/plain';
 }
 
-function isImageFile(f: string) {
-  return IMAGE_EXTENSIONS.includes(getExt(f));
-}
-function isVideoFile(f: string) {
-  return VIDEO_EXTENSIONS.includes(getExt(f));
-}
-function isAudioFile(f: string) {
-  return AUDIO_EXTENSIONS.includes(getExt(f));
-}
-function isPdfFile(f: string) {
-  return PDF_EXTENSIONS.includes(getExt(f));
-}
 function isTextFile(f: string) {
   return TEXT_EXTENSIONS.includes(getExt(f));
 }
 
-function fileTypeIcon(filename: string, size = 18): React.ReactNode {
-  if (isImageFile(filename)) return <FileImageOutlined style={{ fontSize: size }} />;
-  if (isVideoFile(filename)) return <PlaySquareOutlined style={{ fontSize: size }} />;
-  if (isAudioFile(filename)) return <SoundOutlined style={{ fontSize: size }} />;
-  if (isPdfFile(filename)) return <FilePdfOutlined style={{ fontSize: size }} />;
-  if (isTextFile(filename)) return <FileTextOutlined style={{ fontSize: size }} />;
+function fileTypeIcon(kind: PreviewKind, size = 18): React.ReactNode {
+  if (kind === 'image') return <FileImageOutlined style={{ fontSize: size }} />;
+  if (kind === 'video') return <PlaySquareOutlined style={{ fontSize: size }} />;
+  if (kind === 'audio') return <SoundOutlined style={{ fontSize: size }} />;
+  if (kind === 'pdf') return <FilePdfOutlined style={{ fontSize: size }} />;
+  if (kind === 'text') return <FileTextOutlined style={{ fontSize: size }} />;
   return <FileOutlined style={{ fontSize: size }} />;
 }
 
@@ -112,6 +97,7 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
   const openAction = useObjectActionStore((state) => state.open);
   const objectActionOpen = useObjectActionStore((state) => !!state.action);
   const fileUrl = usePreviewUrl(config, file?.key ?? '', !!file);
+  const { kind, detecting, error: detectionError } = usePreviewKind(fileUrl, file?.name ?? '');
   const [windowSize, setWindowSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
@@ -176,11 +162,13 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
     [file, config, hasCredentials, message, onFileUpdated]
   );
 
-  const isImage = !!file && isImageFile(file.name);
-  const isVideo = !!file && isVideoFile(file.name);
-  const isAudio = !!file && isAudioFile(file.name);
-  const isPdf = !!file && isPdfFile(file.name);
-  const isText = !!file && isTextFile(file.name);
+  const isImage = kind === 'image';
+  const isVideo = kind === 'video';
+  const isAudio = kind === 'audio';
+  const isPdf = kind === 'pdf';
+  const isText = kind === 'text';
+  const detectedText = isText && !!file && !isTextFile(file.name);
+  const textTooLarge = detectedText && (file?.size ?? 0) > DETECTED_TEXT_LIMIT;
   const { thumbnailSrc: videoPoster } = useVideoThumbnail(isVideo ? fileUrl : null);
   const publicUrl = file && config && isPublic ? buildPublicUrl(config, file.key) : null;
   if (!file) return null;
@@ -293,13 +281,19 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
       onClose={close}
       title={file.name}
       subtitle={subtitle}
-      icon={fileTypeIcon(file.name)}
+      icon={fileTypeIcon(kind)}
       width={typeof modalWidth === 'number' ? modalWidth : undefined}
       footer={footer}
     >
       {/* Preview area */}
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
-        {isImage && fileUrl ? (
+        {detecting ? (
+          <p>Detecting preview type…</p>
+        ) : detectionError ? (
+          <p role="alert">{detectionError}</p>
+        ) : textTooLarge ? (
+          <p>Detected text preview is limited to 5 MiB. Download this file to view it.</p>
+        ) : isImage && fileUrl ? (
           <Image
             src={fileUrl}
             alt={file.name}
@@ -326,10 +320,12 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
           <PDFViewer url={fileUrl} showControls maxHeight={getPreviewMaxHeight()} />
         ) : isText && fileUrl ? (
           <TextViewer
+            key={fileUrl}
             url={fileUrl}
             filename={file.name}
             maxHeight={getPreviewMaxHeight()}
-            editable={canEdit}
+            editable={canEdit && !detectedText}
+            maxBytes={detectedText ? DETECTED_TEXT_LIMIT : undefined}
             onSave={handleSaveContent}
           />
         ) : isImage ? (
@@ -343,7 +339,10 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
         ) : isText ? (
           <FileTextOutlined style={{ fontSize: 40, color: 'var(--accent)' }} />
         ) : (
-          <FileOutlined style={{ fontSize: 40, color: 'var(--accent)' }} />
+          <>
+            <FileOutlined style={{ fontSize: 40, color: 'var(--accent)' }} />
+            {fileUrl && <p>No supported preview detected for this file.</p>}
+          </>
         )}
       </div>
 

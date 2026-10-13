@@ -470,6 +470,7 @@ export default function SettingsModal({
       icon={<SettingOutlined style={{ fontSize: 18 }} />}
       width={780}
       bodyPadding={0}
+      bodyClassName="settings-modal-body"
       footer={footer}
     >
       <div className="settings-shell">
@@ -493,7 +494,7 @@ export default function SettingsModal({
         </nav>
 
         {/* Body */}
-        <div className="settings-body">
+        <div className="settings-body" key={tab}>
           {tab === 'appearance' && <AppearancePanel />}
           {tab === 'layout' && <LayoutPanel />}
           {tab === 'shortcuts' && <ShortcutsPanel />}

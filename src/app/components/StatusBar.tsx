@@ -10,6 +10,8 @@ import { useDownloadStore } from '@/app/stores/downloadStore';
 import { useMoveStore, selectAttentionCount } from '@/app/stores/moveStore';
 import SyncOverlay from '@/app/components/SyncOverlay';
 import BucketStats from '@/app/components/status-bar-parts/BucketStats';
+import FolderStatus from '@/app/components/status-bar-parts/FolderStatus';
+import type { FolderNotice } from '@/app/lib/folderNotice';
 import type { StorageConfig } from '@/app/lib/r2cache';
 
 interface StatusBarProps {
@@ -20,6 +22,8 @@ interface StatusBarProps {
   isLoadingFiles?: boolean;
   storageConfig: StorageConfig | null;
   selectedCount?: number;
+  folderNotice?: FolderNotice | null;
+  onRetryFolder?: () => void;
 }
 
 function useRelativeTime(timestamp: number | null): string {
@@ -42,6 +46,8 @@ export default function StatusBar({
   isLoadingFiles = false,
   storageConfig,
   selectedCount = 0,
+  folderNotice,
+  onRetryFolder,
 }: StatusBarProps) {
   const [syncDetailsOpen, setSyncDetailsOpen] = useState(false);
   const focusable = useAntdModalFocusable();
@@ -117,57 +123,60 @@ export default function StatusBar({
   return (
     <>
       <div className="statusbar">
-        {/* Sync state */}
-        {hasConfig && (
-          <span
-            className={`sb-stat${syncClass ? ` ${syncClass}` : ''}`}
-            style={{ cursor: syncClass === 'syncing' ? 'pointer' : undefined }}
-            onClick={syncClass === 'syncing' ? () => setSyncDetailsOpen(true) : undefined}
-          >
-            <span className="dot" />
-            {syncLabel}
-          </span>
-        )}
+        <div className="sb-overview">
+          {/* Sync state */}
+          {hasConfig && (
+            <span
+              className={`sb-stat${syncClass ? ` ${syncClass}` : ''}`}
+              style={{ cursor: syncClass === 'syncing' ? 'pointer' : undefined }}
+              onClick={syncClass === 'syncing' ? () => setSyncDetailsOpen(true) : undefined}
+            >
+              <span className="dot" />
+              {syncLabel}
+            </span>
+          )}
 
-        {/* Item count + selection */}
-        {itemLabel && (
-          <span className="sb-stat">
-            {itemLabel}
-            {selectedCount > 0 && <span> · {selectedCount} selected</span>}
-          </span>
-        )}
+          {/* Item count + selection */}
+          {itemLabel && (
+            <span className="sb-stat">
+              {itemLabel}
+              {selectedCount > 0 && <span> · {selectedCount} selected</span>}
+            </span>
+          )}
 
-        {/* Bucket name */}
-        {storageConfig?.bucket && (
-          <span className="sb-stat">
-            <DatabaseOutlined style={{ fontSize: 11 }} />
-            {storageConfig.bucket}
-          </span>
-        )}
+          {/* Bucket name */}
+          {storageConfig?.bucket && (
+            <span className="sb-stat">
+              <DatabaseOutlined style={{ fontSize: 11 }} />
+              {storageConfig.bucket}
+            </span>
+          )}
 
-        {/* Bucket-wide summary (live while a big bucket is syncing) */}
-        <BucketStats
-          hasConfig={hasConfig}
-          provider={storageConfig?.provider}
-          accountId={storageConfig?.accountId}
-          bucket={storageConfig?.bucket}
-        />
+          {/* Bucket-wide summary (live while a big bucket is syncing) */}
+          <BucketStats
+            hasConfig={hasConfig}
+            provider={storageConfig?.provider}
+            accountId={storageConfig?.accountId}
+            bucket={storageConfig?.bucket}
+          />
 
-        <span className="spacer" />
+          <span className="spacer" />
 
-        {moveAttentionCount > 0 && (
-          <button className="sb-stat" onClick={() => useMoveStore.getState().setModalOpen(true)}>
-            {moveAttentionCount} move{moveAttentionCount > 1 ? 's' : ''} need attention
-          </button>
-        )}
+          {moveAttentionCount > 0 && (
+            <button className="sb-stat" onClick={() => useMoveStore.getState().setModalOpen(true)}>
+              {moveAttentionCount} move{moveAttentionCount > 1 ? 's' : ''} need attention
+            </button>
+          )}
 
-        {/* Active transfers */}
-        {transferCount > 0 && !isLoadingFiles && (
-          <span className="sb-stat" style={{ color: 'var(--accent)' }}>
-            <SwapOutlined style={{ fontSize: 11 }} />
-            {transferCount} transfer{transferCount > 1 ? 's' : ''} active
-          </span>
-        )}
+          {/* Active transfers */}
+          {transferCount > 0 && !isLoadingFiles && (
+            <span className="sb-stat" style={{ color: 'var(--accent)' }}>
+              <SwapOutlined style={{ fontSize: 11 }} />
+              {transferCount} transfer{transferCount > 1 ? 's' : ''} active
+            </span>
+          )}
+        </div>
+        <FolderStatus notice={folderNotice} onRetry={onRetryFolder} />
       </div>
 
       <Modal

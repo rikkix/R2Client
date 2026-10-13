@@ -1,7 +1,7 @@
 'use client';
 import ObjectActions from '@/app/components/ObjectActions';
 import FileAreaLoading from '@/app/components/FileAreaLoading';
-import { useDelayedFlag } from '@/app/hooks/useDelayedFlag';
+import { folderNotice } from '@/app/lib/folderNotice';
 
 import dynamic from 'next/dynamic';
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
@@ -231,11 +231,6 @@ export default function Home() {
     currentPath
   );
   const { isSyncing, isSynced, lastSyncTime, refresh: refreshSync } = useFilesSync(config);
-  const showCachedNotice = useDelayedFlag(
-    hasData && !searchQuery.trim() && !error && !isPartial && isCached && isFetching,
-    JSON.stringify([config?.provider, config?.accountId, config?.bucket, currentPath]),
-    250
-  );
 
   useEffect(() => {
     clearSelection();
@@ -257,6 +252,18 @@ export default function Home() {
   ]);
 
   const backgroundSync = useSyncStore((state) => state.backgroundSync);
+  const folderStatus = folderNotice({
+    configured: !!config,
+    hasData,
+    loading: isLoading,
+    fetching: isFetching,
+    partial: isPartial,
+    cached: isCached,
+    error,
+    searchQuery,
+    searching: isSearching,
+    indexing: backgroundSync,
+  });
 
   // Zustand store for folder metadata
   const metadata = useFolderSizeStore((state) => state.metadata);
@@ -1161,42 +1168,6 @@ export default function Home() {
                 whenever any sync pipeline is running. Self-hides when idle. */}
             <SyncBanner />
 
-            {/* Partial-data search indicator during background sync */}
-            {searchQuery.trim() && backgroundSync.isRunning && (
-              <div
-                style={{
-                  padding: '4px 12px',
-                  fontSize: 12,
-                  color: 'var(--ant-color-text-secondary)',
-                  background: 'var(--ant-color-fill-quaternary)',
-                  borderRadius: 4,
-                  margin: '0 16px 4px',
-                }}
-              >
-                Searching {backgroundSync.objectsFetched.toLocaleString()}
-                {backgroundSync.estimatedTotal
-                  ? ` of ~${backgroundSync.estimatedTotal.toLocaleString()}`
-                  : ''}{' '}
-                objects (sync in progress)
-              </div>
-            )}
-
-            {hasData && !searchQuery.trim() && (error || isPartial || showCachedNotice) && (
-              <Alert
-                type={error ? 'warning' : 'info'}
-                showIcon
-                title={
-                  error
-                    ? `${isPartial ? 'Some files are loaded' : 'Showing cached folder contents'}; refresh failed`
-                    : isPartial
-                      ? 'Loading more files — sorting the files loaded so far'
-                      : 'Showing cached folder contents; checking for changes'
-                }
-                description={error?.message}
-                action={error ? <Button onClick={() => void refresh()}>Retry</Button> : undefined}
-              />
-            )}
-
             {/* File area */}
             <div className="file-area" style={{ flex: 1, minHeight: 0, position: 'relative' }}>
               {!config ? (
@@ -1282,6 +1253,8 @@ export default function Home() {
               isLoadingFiles={isLoading || isSyncing}
               storageConfig={config}
               selectedCount={selectedKeys.size}
+              folderNotice={folderStatus}
+              onRetryFolder={() => void refresh()}
             />
 
             {configModalOpen && (

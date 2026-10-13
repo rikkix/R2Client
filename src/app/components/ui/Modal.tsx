@@ -51,6 +51,7 @@ export interface ModalProps {
   footer?: ReactNode;
   children: ReactNode;
   bodyPadding?: number | string;
+  bodyClassName?: string;
   /** Backdrop stacking; the stylesheet's `.modal-backdrop` layer (100) when unset. */
   zIndex?: number;
 }
@@ -65,6 +66,7 @@ export default function Modal({
   footer,
   children,
   bodyPadding,
+  bodyClassName,
   zIndex,
 }: ModalProps) {
   // The latest onClose, so a parent passing a fresh arrow on every render
@@ -111,7 +113,7 @@ export default function Modal({
           </button>
         </div>
         <div
-          className="modal-body"
+          className={['modal-body', bodyClassName].filter(Boolean).join(' ')}
           style={bodyPadding != null ? { padding: bodyPadding } : undefined}
         >
           {children}
