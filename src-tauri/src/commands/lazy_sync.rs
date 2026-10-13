@@ -1027,13 +1027,16 @@ fn is_under_skipped_prefix(prefix: &str, skipped: &[String]) -> bool {
 
 /// How long a listing keeps trying against a provider that is failing right now.
 ///
-/// Attempts use full jitter within an exponentially increasing cap. A shared
-/// 30-second deadline includes queueing, SDK attempts, and Retry-After waits;
-/// shared client configuration owns the SDK wire-attempt limit.
+/// Attempts use full jitter within an exponentially increasing cap.
+/// The total deadline includes queueing, SDK attempts, and Retry-After waits.
+/// A shorter per-attempt deadline lets a stalled read retry before that budget
+/// expires, without changing timeouts for transfers or metadata writes.
 #[derive(Debug, Clone, Copy)]
 struct ListRetryPolicy {
     /// Attempts in total, counting the first.
     max_attempts: u32,
+    total_budget: Duration,
+    attempt_timeout: Duration,
     initial_backoff: Duration,
     max_backoff: Duration,
 }
@@ -1051,13 +1054,17 @@ impl ListRetryPolicy {
 /// Foreground requests use at most three attempts with 0.5s and 1s jitter caps.
 const FOREGROUND_LIST_RETRY: ListRetryPolicy = ListRetryPolicy {
     max_attempts: 3,
+    total_budget: Duration::from_secs(30),
+    attempt_timeout: Duration::from_secs(10),
     initial_backoff: Duration::from_millis(500),
     max_backoff: Duration::from_secs(1),
 };
 
-/// Background requests may retry six times within the same total deadline.
+/// Background refresh can wait longer while cached files remain browsable.
 const BACKGROUND_LIST_RETRY: ListRetryPolicy = ListRetryPolicy {
     max_attempts: 6,
+    total_budget: Duration::from_secs(90),
+    attempt_timeout: Duration::from_secs(30),
     initial_backoff: Duration::from_secs(1),
     max_backoff: Duration::from_secs(16),
 };
@@ -1111,15 +1118,19 @@ fn record_operation_delta(
     );
 }
 
-fn list_failure_from_operation(error: OperationError) -> ListFailure {
+fn list_failure_from_operation(error: OperationError, budget: Duration) -> ListFailure {
     match error {
         OperationError::Cancelled | OperationError::Paused => ListFailure::Cancelled,
         OperationError::Deadline { last } => {
-            let mut message = "S3 list exceeded its 30 second request budget".to_string();
+            let mut message = format!(
+                "S3 list exceeded its {} second request budget",
+                budget.as_secs_f64()
+            );
             if let Some(last) = last {
                 message.push_str("; last attempt: ");
                 message.push_str(&last.message);
             }
+            message.push_str(". Check the storage endpoint or network connection, then refresh. Cached files have been kept.");
             ListFailure::Failed(message)
         }
         OperationError::Failed { error, attempts } => {
@@ -1150,7 +1161,7 @@ where
     Fut: Future<Output = Result<T, SdkError<E, HttpResponse>>>,
 {
     let cancelled = AtomicBool::new(false);
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    let deadline = tokio::time::Instant::now() + policy.total_budget;
     let before = operation::metrics();
     let operation = async {
         let _background = if background {
@@ -1178,7 +1189,15 @@ where
         execute_operation(&context, || {
             let page = send_page();
             async move {
-                page.await.map_err(|error| {
+                let response = tokio::time::timeout(policy.attempt_timeout, page)
+                    .await
+                    .map_err(|_| {
+                        AttemptError::transient(format!(
+                            "S3 list attempt timed out after {} seconds waiting for a response",
+                            policy.attempt_timeout.as_secs_f64()
+                        ))
+                    })?;
+                response.map_err(|error| {
                     let class = crate::providers::s3_client::s3_error_class(&error, false);
                     let message = describe_s3_error(&error);
                     let retry_after = error
@@ -1206,10 +1225,11 @@ where
     let result = tokio::select! {
         biased;
         _ = &mut cancel_probe => Err(OperationError::Cancelled),
+        _ = tokio::time::sleep_until(deadline) => Err(OperationError::Deadline { last: None }),
         result = &mut operation => result,
     };
     record_operation_delta(before, measurements);
-    result.map_err(list_failure_from_operation)
+    result.map_err(|error| list_failure_from_operation(error, policy.total_budget))
 }
 
 async fn while_active<T>(
@@ -1224,7 +1244,7 @@ async fn while_active<T>(
         }
         tokio::select! {
             biased;
-            _ = tokio::time::sleep_until(deadline) => return Err(ListFailure::Failed("S3 list exceeded its 30 second request budget".into())),
+            _ = tokio::time::sleep_until(deadline) => return Err(ListFailure::Failed("Previous bucket sync did not stop within 30 seconds. Refresh to retry.".into())),
             _ = tokio::time::sleep(Duration::from_millis(10)) => {},
             result = &mut future => return Ok(result),
         }
@@ -1674,6 +1694,142 @@ mod tests {
     use super::*;
     use aws_sdk_s3::operation::list_objects_v2::ListObjectsV2Error;
     use tokio::time::Instant;
+
+    fn short_list_policy() -> ListRetryPolicy {
+        ListRetryPolicy {
+            max_attempts: 3,
+            total_budget: Duration::from_millis(100),
+            attempt_timeout: Duration::from_millis(10),
+            initial_backoff: Duration::ZERO,
+            max_backoff: Duration::ZERO,
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stalled_list_attempt_retries_before_the_total_deadline() {
+        let scheduler = endpoint_scheduler("stalled-list-recovery");
+        let calls = AtomicUsize::new(0);
+        let result = list_with_shared_executor::<_, ListObjectsV2Error, _>(
+            short_list_policy(),
+            "stalled-list-recovery",
+            "bucket:",
+            "",
+            &scheduler,
+            false,
+            None,
+            || true,
+            || async {
+                if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+                Ok::<_, SdkError<ListObjectsV2Error, HttpResponse>>("recovered-page")
+            },
+        )
+        .await;
+        assert_eq!(result, Ok("recovered-page"));
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn repeated_stalls_are_bounded_and_describe_the_attempt_failure() {
+        let scheduler = endpoint_scheduler("stalled-list-exhausted");
+        let calls = AtomicUsize::new(0);
+        let result = list_with_shared_executor::<_, ListObjectsV2Error, _>(
+            short_list_policy(),
+            "stalled-list-exhausted",
+            "bucket:",
+            "",
+            &scheduler,
+            false,
+            None,
+            || true,
+            || async {
+                calls.fetch_add(1, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                Ok::<_, SdkError<ListObjectsV2Error, HttpResponse>>(())
+            },
+        )
+        .await;
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("after 3 attempts"));
+        assert!(message.contains("attempt timed out"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn background_admission_cannot_outlive_the_listing_budget() {
+        let scheduler = endpoint_scheduler("stalled-background-admission");
+        let _held = scheduler
+            .background
+            .acquire_many(BACKGROUND_LIST_CAPACITY as u32)
+            .await
+            .unwrap();
+        let sent = AtomicUsize::new(0);
+        let started = Instant::now();
+        let result = list_with_shared_executor::<_, ListObjectsV2Error, _>(
+            short_list_policy(),
+            "stalled-background-admission",
+            "bucket:",
+            "",
+            &scheduler,
+            true,
+            None,
+            || true,
+            || async {
+                sent.fetch_add(1, Ordering::SeqCst);
+                Ok::<_, SdkError<ListObjectsV2Error, HttpResponse>>(())
+            },
+        )
+        .await;
+        assert_eq!(sent.load(Ordering::SeqCst), 0);
+        assert_eq!(started.elapsed(), short_list_policy().total_budget);
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Cached files have been kept"));
+    }
+
+    #[tokio::test]
+    async fn real_sdk_recovers_from_a_stalled_first_list_response() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let seen = calls.clone();
+        let fixture = crate::test_s3::serve(move |_| {
+            let seen = seen.clone();
+            async move {
+                if seen.fetch_add(1, Ordering::SeqCst) == 0 {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
+                crate::test_s3::Response::xml(200, "<ListBucketResult><Name>bucket</Name><KeyCount>0</KeyCount><IsTruncated>false</IsTruncated></ListBucketResult>")
+            }
+        })
+        .await;
+        let scheduler = endpoint_scheduler(&fixture.endpoint);
+        let result = list_with_shared_executor::<_, ListObjectsV2Error, _>(
+            ListRetryPolicy {
+                total_budget: Duration::from_secs(5),
+                attempt_timeout: Duration::from_millis(500),
+                ..short_list_policy()
+            },
+            &fixture.endpoint,
+            "bucket:",
+            "",
+            &scheduler,
+            true,
+            None,
+            || true,
+            || fixture.client.list_objects_v2().bucket("bucket").send(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.is_truncated(), Some(false));
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(fixture
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|r| r.method == "GET"));
+    }
 
     #[test]
     fn backoff_doubles_up_to_the_cap() {
