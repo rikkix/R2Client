@@ -16,6 +16,7 @@ The probe adds one GET, and private reads also use the service's existing HeadOb
 - Rust source was unchanged in this change; Rust tests were not rerun.
 - The production frontend build, macOS release app, and DMG completed successfully. Running the frontend build directly avoided a port failure in the Tauri pre-build subprocess; packaging reused that completed static output. Updater artifacts remain disabled.
 - `/Applications/r2.app` was replaced after normal quit. Its staged and installed file manifests and local ad-hoc signature were verified; account data was untouched.
-- The footer refresh status was observed in the native app before the Settings and preview changes. Final native Settings scrolling and content detection verification are pending because desktop automation reports that the Mac is locked. Content detection was tested with automated local fixtures; no live provider write acceptance is claimed.
+- The rebuilt installed app showed the footer refresh status and then removed it without a top banner. Native checks scrolled both Appearance and Layout: only the right content panel moved; navigation, header, and footer stayed fixed. Scrolling over the fitted navigation did not move it. Switching tabs reset the right panel to the top, and Mounts remained accessible. No settings were changed.
+- The installed app detected and rendered the existing public icon preview successfully; its Close button retained the correct icon. ASCII/UTF-8 detection was tested with automated local fixtures, not a native text fixture in this run. No live provider write acceptance is claimed.
 
 No existing remote object was changed and no release was published.
