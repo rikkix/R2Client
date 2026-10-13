@@ -1,5 +1,7 @@
 # Personalization Validation
 
+This records checks of an unofficial personal-use modification of the original R2 Client. The modification remains unverified for live providers and production use, and is not intended for public distribution or support.
+
 Date: 2026-10-13. Platform: macOS, Apple Silicon. Version: 0.3.10.
 
 ## Delivered Behavior
