@@ -10,6 +10,7 @@ export function usePreviewKind(url: string | null, name: string) {
     error?: string;
   } | null>(null);
   useEffect(() => {
+    setResult(null);
     if (!url) return;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);

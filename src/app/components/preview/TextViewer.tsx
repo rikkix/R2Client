@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { Spin, Typography, Button, Space, Tooltip } from 'antd';
 import { FileTextOutlined, FormatPainterOutlined, SaveOutlined } from '@ant-design/icons';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
-import { invoke } from '@tauri-apps/api/core';
+import { readTextPreview } from '@/app/lib/textPreview';
 import Editor, { loader, type Monaco } from '@monaco-editor/react';
 import type { editor } from 'monaco-editor';
 import DownloadProgress from '@/app/components/preview/DownloadProgress';
@@ -81,21 +81,6 @@ function getLanguageFromExtension(filename: string): string {
   return langMap[ext] || 'plaintext';
 }
 
-function isScopeError(err: unknown): boolean {
-  if (!err) return false;
-  const message = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
-  return message.toLowerCase().includes('url not allowed on the configured scope');
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
-
 export default function TextViewer({
   url,
   filename = '',
@@ -138,98 +123,32 @@ export default function TextViewer({
     setContent(null);
     setDownloadProgress({ loaded: 0, total: null });
 
-    const fetchViaBackend = async () => {
-      const base64Data = await invoke<string>('fetch_url_bytes', { url });
-      if (cancelled) return;
-      const bytes = base64ToBytes(base64Data);
-      setDownloadProgress({ loaded: bytes.length, total: bytes.length });
-      const text = new TextDecoder('utf-8').decode(bytes);
-      setContent(text);
-      onLoadSuccess?.();
-    };
-
-    const fetchWithProgress = async () => {
-      try {
-        const response = await tauriFetch(url, { signal: controller.signal });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const contentLength = response.headers.get('content-length');
-        const total = contentLength ? parseInt(contentLength, 10) : null;
-        if (maxBytes != null && total != null && total > maxBytes) {
-          await response.body?.cancel();
-          throw new Error('Detected text preview is limited to 5 MiB');
-        }
-
-        if (!response.body) {
-          if (maxBytes != null) throw new Error('Text preview returned no readable body');
-          const text = await response.text();
-          if (!cancelled) {
-            setContent(text);
-            onLoadSuccess?.();
-          }
-          return;
-        }
-
-        // Stream the response for progress tracking
-        const reader = response.body.getReader();
-        const chunks: Uint8Array[] = [];
-        let loaded = 0;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (cancelled) {
-            reader.cancel();
-            return;
-          }
-
-          chunks.push(value);
-          loaded += value.length;
-          if (maxBytes != null && loaded > maxBytes) {
-            await reader.cancel();
-            throw new Error('Detected text preview is limited to 5 MiB');
-          }
-          setDownloadProgress({ loaded, total });
-        }
-
+    void readTextPreview(
+      url,
+      {
+        signal: controller.signal,
+        maxBytes,
+        onProgress: (loaded, total) => {
+          if (!cancelled) setDownloadProgress({ loaded, total });
+        },
+      },
+      tauriFetch
+    )
+      .then((text) => {
         if (!cancelled) {
-          // Combine chunks and decode as text
-          const combined = new Uint8Array(loaded);
-          let offset = 0;
-          for (const chunk of chunks) {
-            combined.set(chunk, offset);
-            offset += chunk.length;
-          }
-          const text = new TextDecoder('utf-8').decode(combined);
           setContent(text);
           onLoadSuccess?.();
         }
-      } catch (err) {
+      })
+      .catch((fetchError: unknown) => {
         if (cancelled) return;
-        let fetchError: unknown = err;
-        if (isScopeError(err) && maxBytes == null) {
-          try {
-            await fetchViaBackend();
-            return;
-          } catch (fallbackErr) {
-            fetchError = fallbackErr;
-          }
-        }
-
-        console.error('Failed to fetch text:', fetchError);
         const errorMsg = fetchError instanceof Error ? fetchError.message : 'Failed to load file';
         setError(errorMsg);
         onLoadError?.(fetchError instanceof Error ? fetchError : new Error(errorMsg));
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchWithProgress();
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
     return () => {
       cancelled = true;

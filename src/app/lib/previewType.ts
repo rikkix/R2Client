@@ -1,6 +1,6 @@
 /** Detection runs only for an opened preview, never while listing or making thumbnails. */
 export const PREVIEW_SAMPLE_BYTES = 8192;
-export const DETECTED_TEXT_LIMIT = 5 * 1024 * 1024;
+export const TEXT_PREVIEW_LIMIT = 5 * 1024 * 1024;
 export type PreviewKind = 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'unknown';
 
 const extensions: Record<Exclude<PreviewKind, 'unknown'>, string[]> = {
@@ -24,21 +24,30 @@ export function detectPreviewKind(bytes: Uint8Array, name: string): PreviewKind 
   const starts = (...signature: number[]) =>
     signature.every((value, index) => bytes[index] === value);
   const ascii = (start: number, end: number) => String.fromCharCode(...bytes.subarray(start, end));
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const bitmap =
+    ascii(0, 2) === 'BM' &&
+    bytes.length >= 26 &&
+    view.getUint32(6, true) === 0 &&
+    view.getUint32(10, true) >= 26 &&
+    [12, 40, 52, 56, 64, 108, 124].includes(view.getUint32(14, true));
+  const id3 =
+    ascii(0, 3) === 'ID3' &&
+    bytes.length >= 10 &&
+    [2, 3, 4].includes(bytes[3]) &&
+    bytes[4] !== 255 &&
+    bytes.subarray(6, 10).every((byte) => byte < 128);
   if (ascii(0, 5) === '%PDF-') return 'pdf';
   if (
     starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a) ||
     starts(0xff, 0xd8, 0xff) ||
     ['GIF87a', 'GIF89a'].includes(ascii(0, 6)) ||
     starts(0, 0, 1, 0) ||
-    (ascii(0, 2) === 'BM' && bytes.length >= 14) ||
+    bitmap ||
     (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP')
   )
     return 'image';
-  if (
-    ascii(0, 3) === 'ID3' ||
-    ascii(0, 4) === 'fLaC' ||
-    (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WAVE')
-  )
+  if (id3 || ascii(0, 4) === 'fLaC' || (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WAVE'))
     return 'audio';
   if (ascii(0, 4) === 'OggS') return mediaKindFromName(name) === 'video' ? 'video' : 'audio';
   if (ascii(4, 8) === 'ftyp') {
@@ -77,7 +86,10 @@ export async function readPreviewSample(
     await response.body?.cancel();
     return new Uint8Array();
   }
-  if (!response.ok) throw new Error(`Preview detection failed (HTTP ${response.status})`);
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error(`Preview detection failed (HTTP ${response.status})`);
+  }
   if (!response.body) throw new Error('Preview detection returned no readable body');
   const reader = response.body.getReader();
   const sample = new Uint8Array(PREVIEW_SAMPLE_BYTES);

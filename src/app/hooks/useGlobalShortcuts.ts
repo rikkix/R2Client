@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react';
+import { blocksBackgroundShortcut } from '@/app/utils/keyboardScope';
 import { useThemeStore } from '@/app/stores/themeStore';
 import { useBatchOperationStore } from '@/app/stores/batchOperationStore';
 
 interface GlobalShortcutHandlers {
+  dialogOpen?: boolean;
   openPalette: () => void;
   closePalette: () => void;
   paletteOpen: boolean;
@@ -36,11 +38,17 @@ export function useGlobalShortcuts(handlers: GlobalShortcutHandlers) {
         target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
       const mod = e.metaKey || e.ctrlKey;
+      const h = handlersRef.current;
+      const closingPalette = mod && e.key === 'k' && h.paletteOpen && !h.dialogOpen;
+      if (
+        e.defaultPrevented ||
+        (!closingPalette && blocksBackgroundShortcut(e, undefined, h.dialogOpen || h.paletteOpen))
+      )
+        return;
 
       // ⌘K — Toggle command palette
       if (mod && e.key === 'k') {
         e.preventDefault();
-        const h = handlersRef.current;
         if (h.paletteOpen) {
           h.closePalette();
         } else {

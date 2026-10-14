@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
+import { blocksBackgroundShortcut } from '@/app/utils/keyboardScope';
 
 interface KeyboardShortcutHandlers {
+  dialogOpen?: boolean;
   onSelectAll?: () => void;
   onDelete?: () => void;
   onRefresh?: () => void;
@@ -17,6 +19,7 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers, enabled
     if (!enabled) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (blocksBackgroundShortcut(e, undefined, handlersRef.current.dialogOpen)) return;
       const target = e.target as HTMLElement;
       const isInput =
         target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;

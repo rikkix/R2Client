@@ -1,5 +1,6 @@
 'use client';
 import ObjectActions from '@/app/components/ObjectActions';
+import { useObjectActionStore } from '@/app/stores/objectActionStore';
 import FileAreaLoading from '@/app/components/FileAreaLoading';
 import { folderNotice } from '@/app/lib/folderNotice';
 
@@ -158,6 +159,24 @@ export default function Home() {
   const moveTaskModalOpen = useMoveStore((s) => s.modalOpen);
   const downloadTaskModalOpen = useDownloadStore((s) => s.modalOpen);
   const transferErrorOpen = useTransferErrorStore((s) => s.isOpen);
+  const objectActionOpen = useObjectActionStore((s) => !!s.action);
+  // Lazy dialogs may not have a DOM node yet. Stop background keys as soon as
+  // they are requested, rather than waiting for their component chunk to load.
+  const dialogOpen = !!(
+    configModalOpen ||
+    settingsOpen ||
+    uploadModalOpen ||
+    previewFile ||
+    renameFile ||
+    renameFolder ||
+    deleteModalOpen ||
+    moveModalOpen ||
+    mountModalOpen ||
+    moveTaskModalOpen ||
+    downloadTaskModalOpen ||
+    transferErrorOpen ||
+    objectActionOpen
+  );
 
   const config = useMemo<StorageConfig | null>(
     () => toStorageConfig(),
@@ -998,6 +1017,7 @@ export default function Home() {
 
   // Global keyboard shortcuts (new shortcuts not covered by useKeyboardShortcuts)
   useGlobalShortcuts({
+    dialogOpen,
     openPalette: () => setPaletteOpen(true),
     closePalette: () => setPaletteOpen(false),
     paletteOpen,
@@ -1014,6 +1034,7 @@ export default function Home() {
   // Keyboard shortcuts
   useKeyboardShortcuts(
     {
+      dialogOpen: dialogOpen || paletteOpen,
       onSelectAll: selectAll,
       onDelete: openBatchDeleteConfirm,
       onRefresh: handleRefresh,

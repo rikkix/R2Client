@@ -1,7 +1,7 @@
 'use client';
 import { usePreviewUrl } from '@/app/hooks/usePreviewUrl';
 import { usePreviewKind } from '@/app/hooks/usePreviewKind';
-import { DETECTED_TEXT_LIMIT, type PreviewKind } from '@/app/lib/previewType';
+import { TEXT_PREVIEW_LIMIT, type PreviewKind } from '@/app/lib/previewType';
 import { useObjectActionStore } from '@/app/stores/objectActionStore';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -168,7 +168,7 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
   const isPdf = kind === 'pdf';
   const isText = kind === 'text';
   const detectedText = isText && !!file && !isTextFile(file.name);
-  const textTooLarge = detectedText && (file?.size ?? 0) > DETECTED_TEXT_LIMIT;
+  const textTooLarge = isText && (file?.size ?? 0) > TEXT_PREVIEW_LIMIT;
   const { thumbnailSrc: videoPoster } = useVideoThumbnail(isVideo ? fileUrl : null);
   const publicUrl = file && config && isPublic ? buildPublicUrl(config, file.key) : null;
   if (!file) return null;
@@ -292,7 +292,7 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
         ) : detectionError ? (
           <p role="alert">{detectionError}</p>
         ) : textTooLarge ? (
-          <p>Detected text preview is limited to 5 MiB. Download this file to view it.</p>
+          <p>Text preview is limited to 5 MiB. Download this file to view it.</p>
         ) : isImage && fileUrl ? (
           <Image
             src={fileUrl}
@@ -325,7 +325,7 @@ export default function FilePreviewModal({ config, onFileUpdated }: FilePreviewM
             filename={file.name}
             maxHeight={getPreviewMaxHeight()}
             editable={canEdit && !detectedText}
-            maxBytes={detectedText ? DETECTED_TEXT_LIMIT : undefined}
+            maxBytes={TEXT_PREVIEW_LIMIT}
             onSave={handleSaveContent}
           />
         ) : isImage ? (

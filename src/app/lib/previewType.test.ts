@@ -82,3 +82,35 @@ test('partial reads, empty objects and access failures are handled explicitly', 
   ).catch((error: Error) => error.message);
   expect(failure).toContain('HTTP 403');
 });
+
+test('ASCII prose that resembles short media prefixes stays text', () => {
+  for (const text of ['ID3', 'ID3 tags describe music.', 'BMP is an image format.']) {
+    expect(detectPreviewKind(bytes(text), 'notes.txt')).toBe('text');
+  }
+  const bmp = new Uint8Array(54);
+  const view = new DataView(bmp.buffer);
+  bmp.set(bytes('BM'));
+  view.setUint32(2, 58, true);
+  view.setUint32(10, 54, true);
+  view.setUint32(14, 40, true);
+  expect(detectPreviewKind(bmp, 'unknown')).toBe('image');
+  expect(detectPreviewKind(new Uint8Array([73, 68, 51, 4, 0, 0, 0, 0, 0, 1]), 'unknown')).toBe(
+    'audio'
+  );
+});
+
+test('failed probe closes its response stream instead of retaining a remote read', async () => {
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const result = await readPreviewSample(
+    'fixture',
+    new AbortController().signal,
+    (async () => new Response(body, { status: 403 })) as typeof fetch
+  ).catch((error: Error) => error.message);
+  expect(result).toContain('HTTP 403');
+  expect(cancelled).toBe(true);
+});

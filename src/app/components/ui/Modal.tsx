@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useId, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { CloseOutlined } from '@ant-design/icons';
 
@@ -69,6 +69,7 @@ export default function Modal({
   bodyClassName,
   zIndex,
 }: ModalProps) {
+  const titleId = useId();
   // The latest onClose, so a parent passing a fresh arrow on every render
   // neither re-registers this modal nor moves it within the stack.
   const latestOnClose = useRef(onClose);
@@ -99,10 +100,16 @@ export default function Modal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="modal" style={{ width }}>
+      <div
+        className="modal"
+        style={{ width }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
         <div className="modal-header">
           <div>
-            <div className="modal-title">
+            <div className="modal-title" id={titleId}>
               {icon}
               {title}
             </div>

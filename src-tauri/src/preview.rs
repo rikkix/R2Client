@@ -33,6 +33,7 @@ struct Session {
     bucket: String,
     key: String,
     references: usize,
+    generation: Option<(String, u64)>,
     cancelled: CancellationToken,
 }
 struct PreviewService {
@@ -111,6 +112,7 @@ impl PreviewManager {
                     bucket: config.bucket,
                     key: key.clone(),
                     references: 1,
+                    generation: None,
                     cancelled: service.stopped.child_token(),
                 })),
             );
@@ -266,6 +268,9 @@ async fn serve_preview(
     let Some((client, bucket, key, cancelled)) = snapshot else {
         return response(StatusCode::SERVICE_UNAVAILABLE, Body::empty());
     };
+    if cancelled.is_cancelled() {
+        return response(StatusCode::NOT_FOUND, Body::empty());
+    }
     let permit = tokio::select! {
         _ = cancelled.cancelled() => return response(StatusCode::NOT_FOUND, Body::empty()),
         result = service.permits.clone().acquire_owned() => match result { Ok(permit) => permit, Err(_) => return response(StatusCode::SERVICE_UNAVAILABLE, Body::empty()) },
@@ -277,7 +282,31 @@ async fn serve_preview(
             Err(e) => return response(s3_status(e.as_service_error().and_then(|e| e.code()), e.raw_response().map(|response| response.status().as_u16())), Body::empty()),
         }
     };
-    let size = head.content_length().unwrap_or(0).max(0) as u64;
+    let Some(size) = head.content_length().filter(|size| *size >= 0) else {
+        return response(StatusCode::BAD_GATEWAY, Body::empty());
+    };
+    let size = size as u64;
+    let Some(etag) = head.e_tag().filter(|etag| !etag.is_empty()) else {
+        return response(StatusCode::BAD_GATEWAY, Body::empty());
+    };
+    // Pin all reads, including later seeks and shared consumers, to the first
+    // object generation. A fresh HEAD for each request must not adopt new bytes.
+    {
+        let Ok(mut session) = entry.lock() else {
+            return response(StatusCode::SERVICE_UNAVAILABLE, Body::empty());
+        };
+        if cancelled.is_cancelled() {
+            return response(StatusCode::NOT_FOUND, Body::empty());
+        }
+        if let Some((original_etag, original_size)) = &session.generation {
+            if original_etag != etag || *original_size != size {
+                session.cancelled.cancel();
+                return response(StatusCode::PRECONDITION_FAILED, Body::empty());
+            }
+        } else {
+            session.generation = Some((etag.to_string(), size));
+        }
+    }
     let range = match headers.get("range") {
         Some(value) => match value.to_str().ok().and_then(|v| parse_range(v, size).ok()) {
             Some(range) => Some(range),
@@ -298,11 +327,7 @@ async fn serve_preview(
     let body = if method == Method::HEAD {
         Body::empty()
     } else {
-        let mut request = client
-            .get_object()
-            .bucket(&bucket)
-            .key(&key)
-            .set_if_match(head.e_tag().map(str::to_string));
+        let mut request = client.get_object().bucket(&bucket).key(&key).if_match(etag);
         if let Some((start, end)) = range {
             request = request.range(format!("bytes={start}-{end}"));
         }
@@ -520,6 +545,139 @@ mod tests {
             assert!(request.headers.contains_key("authorization"));
             assert!(!request.path.contains("X-Amz-Signature"));
         }
+        manager.shutdown();
+    }
+    #[tokio::test]
+    async fn seeking_never_mixes_object_generations() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let changed = Arc::new(AtomicBool::new(false));
+        let state = changed.clone();
+        let fixture = crate::test_s3::serve(move |request| {
+            let changed = state.load(Ordering::SeqCst);
+            async move {
+                let etag = if changed { "\"new\"" } else { "\"old\"" };
+                let body = if changed { b"new-body" } else { b"old-body" };
+                if request.method == "HEAD" {
+                    return crate::test_s3::Response::empty(200)
+                        .header("content-length", body.len())
+                        .header("etag", etag);
+                }
+                if request.headers.get("if-match").map(String::as_str) != Some(etag) {
+                    return crate::test_s3::Response::xml(
+                        412,
+                        "<Error><Code>PreconditionFailed</Code></Error>",
+                    );
+                }
+                crate::test_s3::Response {
+                    status: 200,
+                    headers: vec![],
+                    body: body.to_vec(),
+                }
+            }
+        })
+        .await;
+        let config = ObjectConfigInput {
+            provider: "minio".into(),
+            account_id: "fixture".into(),
+            bucket: "bucket".into(),
+            access_key_id: "fixture".into(),
+            secret_access_key: "fixture-secret".into(),
+            region: None,
+            endpoint_scheme: Some("http".into()),
+            endpoint_host: Some(fixture.endpoint.trim_start_matches("http://").into()),
+            force_path_style: Some(true),
+        };
+        let manager = PreviewManager::default();
+        let original = manager
+            .create(config.clone(), "movie.mp4".into())
+            .await
+            .unwrap();
+        let held = manager
+            .create(config.clone(), "movie.mp4".into())
+            .await
+            .unwrap();
+        assert_eq!(original.session_id, held.session_id);
+        let http = reqwest::Client::new();
+        assert_eq!(
+            http.get(&original.url)
+                .send()
+                .await
+                .unwrap()
+                .bytes()
+                .await
+                .unwrap()
+                .as_ref(),
+            b"old-body"
+        );
+        changed.store(true, Ordering::SeqCst);
+        assert_eq!(
+            http.get(&original.url)
+                .header("range", "bytes=4-7")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::PRECONDITION_FAILED
+        );
+        assert_eq!(
+            http.get(&held.url).send().await.unwrap().status(),
+            StatusCode::NOT_FOUND
+        );
+        // A stale thumbnail lease must not prevent a newly opened preview from
+        // acquiring the replacement object.
+        let fresh = manager.create(config, "movie.mp4".into()).await.unwrap();
+        assert_ne!(original.session_id, fresh.session_id);
+        assert_eq!(
+            http.get(&fresh.url)
+                .send()
+                .await
+                .unwrap()
+                .bytes()
+                .await
+                .unwrap()
+                .as_ref(),
+            b"new-body"
+        );
+        manager.release(&original.session_id);
+        manager.release(&held.session_id);
+        manager.release(&fresh.session_id);
+        manager.shutdown();
+    }
+
+    #[tokio::test]
+    async fn missing_object_etag_never_starts_an_unconditional_read() {
+        let fixture = crate::test_s3::serve(|_| async {
+            crate::test_s3::Response::empty(200).header("content-length", 0)
+        })
+        .await;
+        let config = ObjectConfigInput {
+            provider: "minio".into(),
+            account_id: "fixture".into(),
+            bucket: "bucket".into(),
+            access_key_id: "fixture".into(),
+            secret_access_key: "fixture-secret".into(),
+            region: None,
+            endpoint_scheme: Some("http".into()),
+            endpoint_host: Some(fixture.endpoint.trim_start_matches("http://").into()),
+            force_path_style: Some(true),
+        };
+        let manager = PreviewManager::default();
+        let session = manager.create(config, "file".into()).await.unwrap();
+        assert_eq!(
+            reqwest::Client::new()
+                .get(&session.url)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_GATEWAY
+        );
+        assert!(fixture
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|request| request.method == "HEAD"));
         manager.shutdown();
     }
 }

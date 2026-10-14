@@ -7,6 +7,7 @@ import {
   type StorageConfig,
 } from '@/app/lib/r2cache';
 import { acquirePreviewSession } from '@/app/lib/previewSessions';
+import { publicPreviewUrl } from '@/app/lib/publicPreviewUrl';
 
 /** Local preview URLs are never sharing URLs and never require presigning. */
 export function usePreviewUrl(
@@ -31,6 +32,6 @@ export function usePreviewUrl(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, enabled]);
   if (!enabled || !config) return null;
-  if (isBucketPublic(config)) return buildPublicUrl(config, key);
+  if (isBucketPublic(config)) return publicPreviewUrl(buildPublicUrl(config, key), revision);
   return result?.scope === scope ? result.url : null;
 }
